@@ -1,0 +1,19 @@
+---
+title: "landing_page_ideas"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{landing_page_ideas}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+one idea from [this app](https://github.com/Public-Health-Scotland/scotpho-profiles-tool/blob/4e077f05e5ab00c809ddfcdd02aa76739c99f7d7/shiny_app/global.R#L145)
+
+css for this button [ehre](https://github.com/Public-Health-Scotland/scotpho-profiles-tool/blob/4e077f05e5ab00c809ddfcdd02aa76739c99f7d7/shiny_app/www/styles.css#L101)

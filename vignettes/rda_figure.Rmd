@@ -1,0 +1,81 @@
+---
+title: "rda_figure"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{rda_figure}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(tableaucomposition)
+```
+
+
+We have these relevant lines from the previous version of htis dashboard:
+
+```{r eval = FALSE}
+
+    site_id <- "137_107_H01"
+
+    # Transformation de la composition en matrice de communauté 
+    data_mat <- make_comm(data)
+
+    # Sélectionner les données de HF pour lesquelles on a des données
+    hf_sites_data <-hf_sites[which(hf_sites[,1] %in% row.names(data_mat)),]
+
+    # Sélectionner les données de AvgTemp pour lesquelles on a des données
+    clim_sites_data <- clim_sites[which(clim_sites[,1] %in% row.names(data_mat)),]
+
+    # Calculer la valeur moyenne pondérée de AvgTemp pour chaque espèce
+    data_mat_bin <- data_mat
+    data_mat_bin[data_mat_bin!=0] <- 1
+
+    # Préparation des données
+    X <- cbind(hf_sites_data[,2], clim_sites_data[,3]/10)
+    Y <- decostand(data_mat, method = "hellinger")
+
+    # Création du modèle RDA
+    Yhat <- X %*% solve((t(X) %*% X)) %*% t(X) %*% Y
+
+    # Interprétation des compositions dans le nouvel espace
+    Xhat <- Y %*% ginv(solve((t(X) %*% X)) %*% t(X) %*% Y)
+
+    col_vec <- rep("lightgrey", nrow(hf_sites))
+    col_vec[row.names(data_mat_bin)==site_id] <- "black"
+
+    # Figure
+    fig <- plot_ly(x = Xhat[,1], 
+             y = Xhat[,2],
+             marker = list(
+                  size = 10,
+                    color = col_vec,
+                    line = list(color = "black", width = 2))
+      )
+
+    fig %<>% layout(
+              margin = list(l = 30, r = 30, b = 30, t = 30, pad = 4),
+              xaxis = list(
+                title = "Empreinte humaine",
+                zeroline = FALSE,
+                showline = TRUE,
+                showticklabels = FALSE,
+                titlefont = list(size = 25)),
+              yaxis = list(
+                title = "Température moyenne annuelle",
+                zeroline = FALSE,
+                showline = TRUE,
+                showticklabels = FALSE,
+                showgrid = FALSE,
+                titlefont = list(size = 25))          
+              )
+
+    })
+```

@@ -1,0 +1,564 @@
+---
+title: "map_layer_selection"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{map_layer_selection}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+```{r setup}
+library(mapselector)
+```
+
+
+```{r}
+library(dplyr)
+library(leaflet)
+
+data <- data.frame(Name = c("A", "A", "A", "B", "B", "C", "C", "C"),
+                   Value1 = c(12,43,54,34,23,77,44,22),
+                   Value2 = c(6,5,2,7,5,6,4,3),
+                   Lat = c(51.1, 51.6, 57.3, 52.4, 56.3, 54.3, 60.4, 49.2),
+                   Lon = c(5, -3, -2, -1, 4, 3, -5, 0))
+data %>%
+  leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addCircles(lat=~Lat, lng=~Lon, radius = ~Value1*1000, group=c(~Name, "Value1")) %>%
+  addCircles(lat=~Lat, lng=~Lon, radius = ~Value2, group=c(~Name, "Value2")) %>%
+  addLayersControl(
+    baseGroups = c("Value1", "Value2"),
+    overlayGroups = c("A", "B", "C"),
+    options = layersControlOptions(collapsed = F)
+  )
+
+
+## Stackoverflow
+
+library(dplyr)
+library(leaflet)
+library(htmlwidgets)
+
+data <- data.frame(ID = c("1", "2","3","4","5","6","7","8"),
+                   Name = c("A", "A", "A", "B", "B", "C", "C", "C"),
+                   Value1 = c(12,43,54,34,23,77,44,22),
+                   Value2 = c(6,5,2,7,5,6,4,3),
+                   Lat = c(51.1, 51.6, 57.3, 52.4, 56.3, 54.3, 60.4, 49.2),
+                   Lon = c(5, -3, -2, -1, 4, 3, -5, 0))
+data %>%
+  leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addCircles(lat=~Lat, lng=~Lon, radius = ~Value1*1000, group=~Name, label=~Name, popup=~as.character(Value1), layerId = ~paste(ID,"Value1", sep="")) %>%
+  addCircles(lat=~Lat, lng=~Lon, radius = ~Value2*5000, group=~Name, label=~Name, popup=~as.character(Value2), layerId = ~paste(ID,"Value2", sep="")) %>%
+  addLayersControl(
+    baseGroups = c("Value1", "Value2"),
+    overlayGroups = c("A", "B", "C"),
+    options = layersControlOptions(collapsed = F)
+  ) %>%
+  htmlwidgets::onRender("
+    function(el, x) {
+      var myMap = this;
+      var baseLayer = 'Value1';
+      myMap.eachLayer(function(layer){
+        var id = layer.options.layerId;
+        if (id){
+          if ('Value1' !== id.substring(1,)){
+            layer.getElement().style.display = 'none';
+          }
+        }
+      })
+      console.log(myMap.baselayer);
+      myMap.on('baselayerchange',
+        function (e) {
+          baseLayer=e.name;
+          myMap.eachLayer(function (layer) {
+              var id = layer.options.layerId;
+              if (id){
+                if (e.name !== id.substring(1,)){
+                  layer.getElement().style.display = 'none';
+                  layer.closePopup();
+                }
+                if (e.name === id.substring(1,)){
+                  layer.getElement().style.display = 'block';
+                }
+              }
+
+          });
+        })
+        myMap.on('overlayadd', function(e){
+          myMap.eachLayer(function(layer){
+            var id = layer.options.layerId;
+            if (id){
+                if (baseLayer !== id.substring(1,)){
+                  layer.getElement().style.display = 'none';
+                }
+            }    
+          })
+        })
+    }")
+
+```
+
+
+Now observe this example from the Shiny page:
+
+```{r rstudio-example}
+library(shiny)
+library(leaflet)
+library(RColorBrewer)
+
+ui <- bootstrapPage(
+  tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
+  leafletOutput("map", width = "100%", height = "100%"),
+  absolutePanel(top = 10, right = 10,
+    sliderInput("range", "Magnitudes", min(quakes$mag), max(quakes$mag),
+      value = range(quakes$mag), step = 0.1
+    ),
+    selectInput("colors", "Color Scheme",
+      rownames(subset(brewer.pal.info, category %in% c("seq", "div")))
+    ),
+    checkboxInput("legend", "Show legend", TRUE)
+  )
+)
+
+server <- function(input, output, session) {
+
+  # Reactive expression for the data subsetted to what the user selected
+  filteredData <- reactive({
+    quakes[quakes$mag >= input$range[1] & quakes$mag <= input$range[2],]
+  })
+
+  # This reactive expression represents the palette function,
+  # which changes as the user makes selections in UI.
+  colorpal <- reactive({
+    colorNumeric(input$colors, quakes$mag)
+  })
+
+  output$map <- renderLeaflet({
+    # Use leaflet() here, and only include aspects of the map that
+    # won't need to change dynamically (at least, not unless the
+    # entire map is being torn down and recreated).
+    leaflet(quakes) %>% addTiles() %>%
+      fitBounds(~min(long), ~min(lat), ~max(long), ~max(lat))
+  })
+
+  # Incremental changes to the map (in this case, replacing the
+  # circles when a new color is chosen) should be performed in
+  # an observer. Each independent set of things that can change
+  # should be managed in its own observer.
+  observe({
+    pal <- colorpal()
+
+    leafletProxy("map", data = filteredData()) %>%
+      clearShapes() %>%
+      addCircles(radius = ~10^mag/10, weight = 1, color = "#777777",
+        fillColor = ~pal(mag), fillOpacity = 0.7, popup = ~paste(mag)
+      )
+  })
+
+  # Use a separate observer to recreate the legend as needed.
+  observe({
+    proxy <- leafletProxy("map", data = quakes)
+
+    # Remove any existing legend, and only if the legend is
+    # enabled, create a new one.
+    proxy %>% clearControls()
+    if (input$legend) {
+      pal <- colorpal()
+      proxy %>% addLegend(position = "bottomright",
+        pal = pal, values = ~mag
+      )
+    }
+  })
+}
+
+shinyApp(ui, server)
+```
+
+
+First, put the example from SO into a similar Shiny app structure
+
+```{r}
+
+library(shiny)
+library(leaflet)
+library(RColorBrewer)
+
+ui <- bootstrapPage(
+  tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
+  leafletOutput("map", width = "100%", height = "100%")
+)
+
+server <- function(input, output, session) {
+  
+  data <- data.frame(ID = c("1", "2","3","4","5","6","7","8"),
+                     Name = c("A", "A", "A", "B", "B", "C", "C", "C"),
+                     Value1 = c(12,43,54,34,23,77,44,22),
+                     Value2 = c(6,5,2,7,5,6,4,3),
+                     Lat = c(51.1, 51.6, 57.3, 52.4, 56.3, 54.3, 60.4, 49.2),
+                     Lon = c(5, -3, -2, -1, 4, 3, -5, 0))
+  
+  output$map <- renderLeaflet({
+    data %>%
+      leaflet() %>%
+      addProviderTiles(providers$CartoDB.Positron) %>%
+      addCircles(lat = ~Lat,
+                 lng = ~Lon, 
+                 radius = ~Value1*1000,
+                 group = ~Name, 
+                 label = ~Name,
+                 popup = ~as.character(Value1),
+                 layerId = ~paste(ID,"Value1", sep=""))
+  })
+    
+}
+
+
+shinyApp(ui, server)
+```
+
+So far so good. now, extend with leafletProxy
+
+```{r}
+
+library(shiny)
+library(leaflet)
+library(RColorBrewer)
+
+ui <- bootstrapPage(
+  tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
+  leafletOutput("map", width = "100%", height = "100%"),
+  
+)
+
+server <- function(input, output, session) {
+  
+  data_df <- data.frame(ID = c("1", "2","3","4","5","6","7","8"),
+                     Name = c("A", "A", "A", "B", "B", "C", "C", "C"),
+                     Value1 = c(12,43,54,34,23,77,44,22),
+                     Value2 = c(6,5,2,7,5,6,4,3),
+                     Lat = c(51.1, 51.6, 57.3, 52.4, 56.3, 54.3, 60.4, 49.2),
+                     Lon = c(5, -3, -2, -1, 4, 3, -5, 0))
+  
+  output$map <- renderLeaflet({
+      leaflet(data_df) %>%
+      addTiles() %>%
+      fitBounds(~min(Lon), ~min(Lat), ~max(Lon), ~max(Lat)) %>% 
+      addControl(radioButtons("var_chosen", label = "Which variable?", choices = c("Value 1", "Value 2")),
+                 position = "topright")
+  })
+  
+  leafletProxy("map") %>%
+      clearShapes() %>% 
+      addCircles(lat = ~Lat,
+                 lng = ~Lon,
+                 radius = ~Value1*1000,
+                 group = ~Name,
+                 label = ~Name,
+                 popup = ~as.character(Value1),
+                 data = data_df)
+}
+
+shinyApp(ui, server)
+```
+
+Now, make an observer of the chosen variable that reveals one type of marker or the other:
+
+
+```{r}
+
+library(shiny)
+library(leaflet)
+library(RColorBrewer)
+
+ui <- bootstrapPage(
+  tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
+  leafletOutput("map", width = "100%", height = "100%")
+)
+
+server <- function(input, output, session) {
+  
+  data_df <- data.frame(ID = c("1", "2","3","4","5","6","7","8"),
+                     Name = c("A", "A", "A", "B", "B", "C", "C", "C"),
+                     Value1 = c(12,43,54,34,23,77,44,22),
+                     Value2 = c(6,5,2,7,5,6,4,3),
+                     Lat = c(51.1, 51.6, 57.3, 52.4, 56.3, 54.3, 60.4, 49.2),
+                     Lon = c(5, -3, -2, -1, 4, 3, -5, 0))
+  
+  output$map <- renderLeaflet({
+      leaflet(data_df) %>%
+      addTiles() %>%
+      fitBounds(~min(Lon), ~min(Lat), ~max(Lon), ~max(Lat)) %>% 
+      addControl(radioButtons("var_chosen", label = "Which variable?", 
+                              choices = c("Value #1" = "Value1",
+                                          "Value #2" = "Value2")),
+                 position = "topright")
+  })
+  
+  # necessary because (apparently) the control isn't present until the map is
+  rv <- reactiveValues(value_chosen = "Value1")
+  
+  observeEvent(input$var_chosen,{
+      rv$value_chosen <- input$var_chosen
+    })
+  
+  rad_reactive <- reactive({
+    switch(rv$value_chosen,
+           "Value1" = data_df[["Value1"]]*1000,
+           "Value2" = data_df[["Value2"]]*5000)
+  })
+  
+  observe({
+    leafletProxy("map") %>%
+      clearShapes() %>%
+      addCircles(lat = ~Lat,
+                 lng = ~Lon,
+                 radius = rad_reactive(),
+                 group = ~Name,
+                 label = ~Name,
+                 popup = ~as.character(data_df[[rv$value_chosen]]),
+                 data = data_df)
+  })
+}
+
+shinyApp(ui, server)
+```
+
+
+```{r}
+downloaded_sites <- rcoleo::download_sites_sf() %>% 
+  dplyr::left_join(rcoleo::get_richness(by_site = TRUE),by = c("site_code"))
+```
+
+
+use markers instead of circles, but only for ONE of the variables. or add the category instead. 
+
+
+
+
+```{r switch-markers}
+
+library(shiny)
+library(leaflet)
+library(RColorBrewer)
+
+ui <- bootstrapPage(
+  tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
+  leafletOutput("map", width = "100%", height = "100%")
+)
+
+server <- function(input, output, session) {
+  
+  data_df <- data.frame(ID = c("1", "2","3","4","5","6","7","8"),
+                     Name = c("toundrique", "toundrique", "toundrique", "lac", "lac", "marais", "marais", "marais"),
+                     Value1 = c(12,43,54,34,23,77,44,22),
+                     Value2 = c(6,5,2,7,5,6,4,3),
+                     Lat = c(51.1, 51.6, 57.3, 52.4, 56.3, 54.3, 60.4, 49.2),
+                     Lon = c(5, -3, -2, -1, 4, 3, -5, 0))
+  
+  output$map <- renderLeaflet({
+      leaflet(data_df) %>%
+      addTiles() %>%
+      fitBounds(~min(Lon), ~min(Lat), ~max(Lon), ~max(Lat)) %>% 
+      addControl(radioButtons("var_chosen", label = "Which variable?", 
+                              choices = c("Value #1" = "Value1",
+                                          "Value #2" = "Value2",
+                                          "Name of Type"= "Name")),
+                 position = "topright")
+  })
+  
+  # necessary because (apparently) the control isn't present until the map is
+  rv <- reactiveValues(value_chosen = "Value1")
+  
+  observeEvent(input$var_chosen,{
+      rv$value_chosen <- input$var_chosen
+    })
+  
+  # if the category is some continuious thing, set the radius of circles to it.
+  
+  ics <- mapselector::make_site_icons()
+  
+  rad_reactive <- reactive({
+    switch(rv$value_chosen,
+           "Value1" = 
+             function(x) addCircles(x, 
+                                    lat = ~Lat,
+                                    lng = ~Lon,
+                                    color= "#497e9f",
+                                    stroke = TRUE,
+                                    weight = 5, 
+                                    opacity = 0.75,
+                                    radius = data_df[["Value1"]]*1000,
+                                    group = ~Name,
+                                    label = ~Name,
+                                    popup = ~as.character(data_df[["Value1"]]),
+                                    data = data_df),
+           "Value2" =
+             function(x) addCircles(x, lat = ~Lat,
+                                    lng = ~Lon,
+                                    radius = data_df[["Value2"]]*5000,
+                                    group = ~Name,
+                                    label = ~Name,
+                                    popup = ~as.character(data_df[["Value2"]]),
+                                    data = data_df),
+           "Name" = 
+             function(x) addAwesomeMarkers(x, lat = ~Lat,
+                                    lng = ~Lon,
+                                    icon = ~ics[Name],
+                                    group = ~Name,
+                                    label = ~Name,
+                                    popup = ~as.character(data_df[["Name"]]),
+                                    data = data_df) 
+           )
+  })
+  
+  observe({
+    req(rad_reactive)
+    leafletProxy("map") %>%
+      clearShapes() %>%
+      clearMarkers() %>% 
+      rad_reactive()(.) %>% 
+      addLayersControl(overlayGroups=~Name,
+                       options = layersControlOptions(collapsed=FALSE),
+                       data = data_df)
+  })
+  
+}
+
+shinyApp(ui, server)
+```
+
+add a legend with html [as described here](https://stackoverflow.com/questions/37862467/leaflet-legend-for-custom-markers-in-r) ? 
+which only appears when you have the categorical thing selected
+
+Convenience function inside to partially complete `addCircles`
+
+create a module that makes this map and spits out the clicked ID. 
+
+```{r with-rcoleo}
+downloaded_sites <- rcoleo::download_sites_sf() %>% 
+  dplyr::left_join(rcoleo::get_richness(by_site = TRUE),by = c("site_code")) %>% 
+  add_site_name_df
+  
+```
+
+```{r}
+library(shiny)
+library(leaflet)
+library(RColorBrewer)
+
+ui <- bootstrapPage(
+  tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
+  fa_dependency(),
+  leafletOutput("map", width = "100%", height = "100%")
+)
+
+server <- function(input, output, session) {
+  
+  data_df <- drop_empty_campaigns(downloaded_sites) 
+  
+  choice <- function(m) addControl(m,
+                                   radioButtons("var_chosen", 
+                                                label = "Montre sur la carte:", 
+                                                choices = c("Habitat"           = "type",
+                                                            "Combien d'especes" = "richness")),
+                                   className = "markerchoice",
+                                   position = "topright"
+                                   )
+  
+  output$map <- renderLeaflet({
+    make_leaflet_empty() %>% 
+      choice(.)
+  })
+  
+  # necessary because (apparently) the control isn't present until the map is
+  rv <- reactiveValues(value_chosen = "type")
+  
+  observeEvent(input$var_chosen,{
+      rv$value_chosen <- input$var_chosen
+    })
+  
+  # if the category is some continuious thing, set the radius of circles to it.
+  
+  ics <- mapselector::make_site_icons()
+  
+  map_marker_reactive <- reactive({
+    switch(rv$value_chosen,
+           "richness" = 
+             function(x) addCircleMarkers(x,
+                                          radius = ~(as.integer(richness)/4),
+                                          group = ~type,
+                                          color= "#497e9f",
+                                          stroke = TRUE,
+                                          weight=5, 
+                                          opacity = 0.75,
+                                           label = ~display_name,
+                                           layerId = ~display_name,
+                                          data = data_df),
+           "type" =
+             function(x) addAwesomeMarkers(x,
+                                           icon = ~ics[type],
+                                           group = ~type,
+                                           label = ~display_name,
+                                           layerId = ~display_name,
+                                           data = data_df) 
+    )
+  })
+  
+  observe({
+    req(map_marker_reactive)
+    leafletProxy("map") %>%
+      clearMarkers() %>% 
+      map_marker_reactive()(.) %>% 
+      addLayersControl(overlayGroups = ~type,
+                       options = layersControlOptions(collapsed = FALSE),
+                       data = data_df)
+  })
+  
+  observeEvent(input$map_marker_click$id, cat(paste0(input$map_marker_click$id, "\n")))
+  
+  return(list(
+      click = reactive(input$map_marker_click$id)
+      ))
+}
+
+shinyApp(ui, server)
+```
+
+Note that because we use `addCircleMarkers`, both are markers and we only need to use `clearMarkers` to clear them and `map_marker_click`
+
+
+Do it via a module:
+
+```{r}
+
+ui <- bootstrapPage(
+  tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
+  fa_dependency(),
+  mod_map_richness_campaigns_ui("map_richness_campaigns_1")
+)
+
+server <- function(input, output, session) {
+  
+  userclick <- mod_map_richness_campaigns_server("map_richness_campaigns_1", downloaded_site_name = downloaded_sites)
+  
+  
+  observeEvent(userclick$display_name(), cat(paste0("site name: ", userclick$display_name(), "\n",
+                                                    "site code: ", userclick$site_code(), "\n")))
+  
+}
+
+shinyApp(ui, server)
+```
+
+
+
+modal click -- or should this output a reactive value or somethign? witht he reactive graph constrained? or, does the modal resetting happen OUTSIDE of the map selection but inside the modal work? 

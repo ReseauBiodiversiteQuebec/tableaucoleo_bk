@@ -1,0 +1,8 @@
+default:
+  golem_name: tableaucomposition
+  golem_version: 0.3.0
+  app_prod: no
+production:
+  app_prod: yes
+dev:
+  golem_wd: !expr here::here()

@@ -1,0 +1,229 @@
+---
+title: "rank_abundance"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{rank_abundance}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(tidyverse)
+# start by getting data
+# get all data frist 
+site_df <- rcoleo::download_sites_sf()
+# get one campaign
+some_data <- mapselector::get_subset_site(site = site_df,
+                            site_code_sel = "137_111_F01")
+
+# combine
+some_data_type <- site_df %>% filter(site_code == "137_111_F01") %>% 
+  pull(campaigns) %>% # if it was multiple sites, bind_rows here 
+  bind_rows() %>% 
+  select(id, site_id, type, campaign_id = id) %>% 
+  left_join(some_data)
+
+
+glimpse(some_data)
+
+# no way to tell the kind of campaign just from this? 
+some_data %>% 
+  count(obs_species.taxa_name)
+
+
+```
+
+
+okay probably need a function that adds the "type" info back into the observation table. 
+
+
+Now need to be able to calculate rank abd for every type
+
+```{r}
+some_data_type %>% 
+  count(type)
+```
+
+
+```{r}
+
+# drop campaigns with nothing
+
+some_data_list <- some_data_type %>% 
+  rename(taxa = obs_species.taxa_name, 
+         variable = obs_species.variable,
+         value = obs_species.value) %>% 
+  split(.$type) %>% 
+  discard(~ all(is.na(.$taxa)))
+```
+
+
+
+
+## calculating rank abundance curves
+
+### Vege
+
+```{r}
+some_data_list$végétation %>% 
+  select(taxa, value) %>% 
+  dplyr::mutate(rank = rank(value, ties.method = "random"))
+```
+
+### acoustique
+
+
+```{r}
+# acoustique
+some_data_list$acoustique %>% 
+  dplyr::count(taxa, name = "abundance") %>% 
+  dplyr::mutate(rank = rank(abundance, ties.method = "random"))
+```
+
+
+### insects sol
+
+```{r}
+some_data_list$insectes_sol %>% glimpse
+# has different samples!! 
+
+some_data_list$insectes_sol %>% 
+  count(campaignId, sampleId, taxa)
+
+```
+
+Ok so there are no duplicates of soil insects unless it is via something called "inconnu".
+
+So first thing we need to do is drop all those. for this simple visualization, lets ignore all the subsamples of a site! 
+
+```{r}
+some_data_list$insectes_sol %>% 
+  dplyr::filter(taxa != "inconnu", 
+         value > 1) %>% 
+  dplyr::mutate(taxa = stringr::str_trim(taxa)) %>% 
+  dplyr::group_by(taxa) %>% 
+  dplyr::summarize(abundance = sum(value)) %>% 
+  dplyr::mutate(rank = rank(abundance, ties.method = "random"))
+```
+
+
+OK what about the others?
+
+need a new site:
+
+TODO automate this process and integrate with current workflow.
+Perhaps "mod_campaign_type_server" could even include this.
+
+```{r}
+
+site_df <- rcoleo::download_sites_sf()
+
+site_df$campaigns %>% keep(~nrow(.)>0) %>% map_df(~select(., type)) %>% 
+  distinct
+# okay so there is zoops
+
+
+
+
+some_data <- mapselector::get_subset_site(site = site_df,
+                            site_code_sel = "136_116_H01")
+
+camp_info <- site_df %>% filter(site_code == "136_116_H01") %>% 
+  pull(campaigns) %>% # if it was multiple sites, bind_rows here 
+  bind_rows() %>% 
+  select(id, site_id, type, campaign_id = id)
+
+# combine
+some_data_type <- camp_info %>% 
+  left_join(some_data)
+
+
+some_data_list <- some_data_type %>% 
+  rename(taxa = obs_species.taxa_name, 
+         variable = obs_species.variable,
+         value = obs_species.value) %>% 
+  split(.$type) %>% 
+  discard(~ all(is.na(.$taxa)))
+
+```
+
+
+
+need to think about how to get all observations of a certain kind from ALL sites. 
+
+related, how to prevent downloading the same thing multiple times? if somebody chooses soil (download) and then odonates (download) and then soil again (don't download)
+
+
+```{r}
+map_at
+```
+
+
+## Notes
+
+### Duplicated soil insects
+
+
+Oh and are the soil insects doubled somewhere? need to confirm actually.
+
+```{r}
+some_data_list$insectes_sol %>% 
+  filter(obs_species.taxa_name != "inconnu") %>% 
+  select(sampleId, taxa = obs_species.taxa_name) %>% 
+  {split(.$taxa, .$sampleId)} %>% map(unique)
+```
+
+
+Here I'm looking for some sign that these are different species lists -- we might have injected the SAMPLES twice, meaning that there would be duplicates at the sample level -- in other words, samples with different IDs but the same species in the same abundances.
+
+dang we need some data validation -- we need to confirm that the invetebrate data corresponds to the spreadsheets that we have from the MFFP.
+
+
+```{r}
+library(tidyverse)
+library(rcoleo)
+raw_resp <- get_species_site("v")
+
+raw_resp %>% 
+  ggplot(aes(y = site_code, x = taxa_name)) + geom_tile()
+
+
+# okay add the counts and order them
+
+raw_resp %>% 
+  filter(!is.na(taxa_name)) %>% 
+  add_count(site_code, name = "sn") %>% 
+  add_count(taxa_name, name = "tn") %>% 
+  mutate(site_code = forcats::fct_reorder(site_code, sn),
+         taxa_name = forcats::fct_reorder(taxa_name, tn)) %>% 
+ggplot(aes(y = site_code, x = taxa_name)) + geom_tile() + coord_fixed() + theme_classic()
+
+
+raw_resp %>% count(taxa_name)
+```
+
+how to turn this into rank-freq plot
+
+```{r}
+rank_species <- raw_resp %>% 
+  filter(!is.na(taxa_name)) %>% 
+  count(taxa_name) %>% 
+  mutate(rank = rank(desc(n), ties.method = "random")) 
+
+rank_species %>% 
+  ggplot(aes(x = rank, y = n)) + geom_point() + 
+  theme_minimal() + 
+  labs(x = "rang des espèces", y = "Frequence des especes")
+```
+
+
+
+or into rank-richness plot
+
