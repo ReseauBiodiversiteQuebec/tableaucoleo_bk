@@ -47,8 +47,8 @@ mod_site_richness_campaign_display_server <- function(id, sites, site, rich, all
               phs<-cbind(phs,photo$thumb_url)
               uiOutput(photo_name)    
               output[[photo_name]]<-renderUI({
-                div(div(id = photo_name,class="top_photos",style=paste0("background: url(",photo$thumb_url,");"),
-                        div(sp_list[i,'taxa_name'], class="photo_species_name"))
+                div(
+                  div(sp_list[i,'taxa_name'], class="photo_species_name"),div(id = photo_name,class="top_photos",style=paste0("background: url(",photo$thumb_url,");"))
                 )
               })
             }
