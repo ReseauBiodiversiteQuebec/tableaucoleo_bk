@@ -10,7 +10,7 @@ app_ui <- function(request) {
     golem_add_external_resources(),
     tableau_de_bord(
       dash_sidebar(
-        dash_title(title = "Programme de suivi de la biodiversité", icon="nature-collection-trees-1"),
+        dash_title(title = "Réseau de suivi de la biodiversité", icon="nature-collection-trees-1"),
         badge(text_badge="Cet interface permet d'explorer la diversité des espèces répertoriées dans les inventaires effectués dans le cadre du réseau de suivi de la biodiversité du Québec.")
         #mod_campaign_type_radio("selcamp",start_sel = "odonates"),
         #mapselector::mod_modal_helpbutton_ui("info1", "Jargon")
